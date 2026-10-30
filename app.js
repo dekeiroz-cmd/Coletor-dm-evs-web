@@ -16,7 +16,39 @@ $('csv').onclick=()=>{let lines=[['Data','Obra','TAG','Inspetor','DM','EVS','Qua
 let stream=null,worker=null,active=false,busy=false,timer=null,epoch=0;
 const video=$('video'),roi=$('roi'),viewport=$('viewport');
 function stop(){epoch++;active=false;clearTimeout(timer);if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}video.srcObject=null;$('camArea').style.display='none';$('open').disabled=false;}
-$('open').onclick=async()=>{if(stream)return;try{stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});video.srcObject=stream;await video.play();$('camArea').style.display='block';$('open').disabled=true;active=true;epoch++;queue();}catch(e){stop();$('status').textContent='Não foi possível abrir a câmera: '+e.message;}};
+$('open').onclick=async()=>{
+ if(stream)return;
+ $('status').textContent='Solicitando acesso à câmera...';
+ if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){
+  $('status').textContent='Câmera indisponível neste contexto. Abra o site em HTTPS no Chrome e permita o acesso à câmera.';
+  return;
+ }
+ try{
+  try{
+   stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+  }catch(e){
+   if(e.name==='OverconstrainedError'||e.name==='NotFoundError'){
+    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:true});
+   }else throw e;
+  }
+  $('camArea').style.display='block';
+  $('open').disabled=true;
+  video.srcObject=stream;
+  await video.play();
+  active=true;epoch++;queue();
+  $('status').textContent='Câmera aberta. Aponte a moldura para a TAG.';
+ }catch(e){
+  stop();
+  let dicas={
+   NotAllowedError:'Permissão negada. No Chrome, toque no cadeado ou ícone de configurações ao lado do endereço e permita Câmera.',
+   NotFoundError:'Nenhuma câmera foi encontrada.',
+   NotReadableError:'A câmera está em uso por outro aplicativo. Feche outros apps de câmera e tente novamente.',
+   OverconstrainedError:'Configuração da câmera não suportada.',
+   AbortError:'A câmera foi interrompida. Tente novamente.'
+  };
+  $('status').textContent='Não foi possível abrir a câmera: '+(dicas[e.name]||e.message||e.name);
+ }
+};
 $('close').onclick=()=>{stop();$('status').textContent='Câmera fechada.'};$('again').onclick=()=>{if(stream){active=true;$('choices').innerHTML='';queue();}};
 async function getWorker(){if(worker)return worker;if(!window.Tesseract)await new Promise((resolve,reject)=>{let s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=resolve;s.onerror=()=>reject(Error('Falha ao carregar OCR'));document.head.append(s);});worker=await Tesseract.createWorker('eng');return worker;}
 function crop(){let vr=video.getBoundingClientRect(),rr=roi.getBoundingClientRect(),vw=video.videoWidth,vh=video.videoHeight;if(!vw||!vh)throw Error('Câmera iniciando');let scale=Math.max(vr.width/vw,vr.height/vh),ow=(vw-vr.width/scale)/2,oh=(vh-vr.height/scale)/2,x=Math.max(0,ow+(rr.left-vr.left)/scale),y=Math.max(0,oh+(rr.top-vr.top)/scale),w=Math.min(rr.width/scale,vw-x),h=Math.min(rr.height/scale,vh-y);let c=$('snap'),k=Math.min(2,1000/Math.max(w,h));c.width=Math.max(1,Math.round(w*k));c.height=Math.max(1,Math.round(h*k));c.getContext('2d').drawImage(video,x,y,w,h,0,0,c.width,c.height);return c;}
