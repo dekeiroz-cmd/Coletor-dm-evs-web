@@ -5,3 +5,5 @@ OCR continuo via Tesseract.js: processa somente a moldura, sequencialmente; depe
 O usuario deve confirmar a TAG. Nao ha atualizacao automatica das planilhas oficiais.
 
 V1.2: abertura da camera corrigida; area de video exibida antes do play; fallback de camera e mensagens de permissao; cache versionado.
+
+V1.3: botoes animados, confirmacao de baixa, historico editavel/exclusao logica, compartilhamento CSV via Web Share API, OCR com ultimo resultado, campo obra removido. Camera alternativa por foto.
