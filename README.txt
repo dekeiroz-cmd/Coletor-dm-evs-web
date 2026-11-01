@@ -7,3 +7,5 @@ O usuario deve confirmar a TAG. Nao ha atualizacao automatica das planilhas ofic
 V1.2: abertura da camera corrigida; area de video exibida antes do play; fallback de camera e mensagens de permissao; cache versionado.
 
 V1.3: botoes animados, confirmacao de baixa, historico editavel/exclusao logica, compartilhamento CSV via Web Share API, OCR com ultimo resultado, campo obra removido. Camera alternativa por foto.
+
+V1.4: pré-carregamento OCR ao abrir, botões de sinetes recentes, último sinete mantido, vibração e bipe (quando suportados), reconhecimento sem diálogo de confirmação. OCR ainda usa recursos remotos na primeira preparação: NÃO está empacotado/offline integral.

@@ -2,13 +2,42 @@
 const $=x=>document.getElementById(x),KEY='coletor_dmevs_registros_v1';let entries=[];
 try{entries=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(entries))entries=[];}catch{}
 $('insp').value=localStorage.getItem('coletor_insp')||'';
-function setInspector(){$('sinWrap').style.display=$('insp').value==='Sandro'?'none':'block';localStorage.setItem('coletor_insp',$('insp').value)}$('insp').onchange=setInspector;setInspector();
+function setInspector(){$('sinWrap').style.display=$('insp').value==='Sandro'?'none':'block';localStorage.setItem('coletor_insp',$('insp').value)}$('insp').onchange=()=>{setInspector();refreshSinetes();};setInspector();
 const date=()=>{let d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function totals(){let m=new Map();for(let e of entries.filter(x=>!x.undone)){let k=JSON.stringify([e.date,e.tag,e.insp,e.sinete]);if(!m.has(k))m.set(k,{...e,qtd:0,count:0});m.get(k).qtd+=e.qtd;m.get(k).count++;}return [...m.values()].sort((a,b)=>a.date.localeCompare(b.date)||a.tag.localeCompare(b.tag));}
 function render(){$('list').innerHTML=totals().map(e=>`<div class="item"><b>${esc(e.tag)}</b> — ${e.qtd} peças<br><small>${esc(e.date)} • ${esc(e.insp)} ${esc(e.sinete)} • ${e.count} lançamento(s)</small></div>`).join('')||'Nenhuma baixa.';}
 function persist(){localStorage.setItem(KEY,JSON.stringify(entries));render()}
 
+const SIN_KEY='coletor_dmevs_sinetes_recentes_v14';
+function getSinetes(){try{const v=JSON.parse(localStorage.getItem(SIN_KEY)||'{}');return v&&typeof v==='object'?v:{};}catch{return {};}}
+function refreshSinetes(){
+ const insp=$('insp').value, all=getSinetes(), recent=all[insp]||[];
+ const box=$('recentSinetes');box.innerHTML='';
+ if(insp==='Sandro')return;
+ if(!recent.length){const t=document.createElement('small');t.textContent='Sem sinetes recentes.';box.append(t);return;}
+ const current=$('sin').value.trim().toUpperCase();
+ for(const s of recent){const b=document.createElement('button');b.type='button';b.textContent=s;b.className=current===s?'selected':'';
+ b.onclick=()=>{$('sin').value=s;refreshSinetes();};box.append(b);}
+}
+function rememberSinete(insp,s){if(!s||insp==='Sandro')return;const all=getSinetes();all[insp]=[s,...(all[insp]||[]).filter(x=>x!==s)].slice(0,6);localStorage.setItem(SIN_KEY,JSON.stringify(all));}
+$('sin').addEventListener('input',refreshSinetes);
+refreshSinetes();
+let audioContext=null;
+function feedback(){
+ try{if(navigator.vibrate)navigator.vibrate(75);}catch{}
+ try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;
+ audioContext=audioContext||new C();if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});
+ const osc=audioContext.createOscillator(),gain=audioContext.createGain(),now=audioContext.currentTime;
+ osc.type='sine';osc.frequency.value=940;gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(.12,now+.015);gain.gain.exponentialRampToValueAtTime(.0001,now+.13);
+ osc.connect(gain);gain.connect(audioContext.destination);osc.start(now);osc.stop(now+.14);
+ }catch{}
+}
+function acceptTag(value){
+ const v=value.trim().toUpperCase();if(!v)return;
+ $('tag').value=v;$('tag').classList.remove('flash');void $('tag').offsetWidth;$('tag').classList.add('flash');
+ $('choices').innerHTML='';$('status').textContent='TAG lida: '+v+'. Confira e salve a baixa.';feedback();
+}
 let toastTimer;
 function toast(msg){const el=$('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3200);}
 $('save').onclick=()=>{
@@ -16,7 +45,7 @@ $('save').onclick=()=>{
  const sinete=insp==='Sandro'?'':$('sin').value.trim().toUpperCase();
  if(!insp||!tag||!Number.isSafeInteger(qtd)||qtd<=0||(insp!=='Sandro'&&!sinete)){toast('Confira inspetor, TAG, quantidade e sinete.');return;}
  entries.push({id:Date.now()+Math.random(),date:date(),timestamp:new Date().toISOString(),insp,obra:'',tag,qtd,sinete,undone:false});
- persist();$('tag').value='';$('qtd').value='1';$('sin').value='';$('choices').innerHTML='';
+ rememberSinete(insp,sinete);persist();$('tag').value='';$('qtd').value='1';$('sin').value=sinete;refreshSinetes();$('choices').innerHTML='';
  $('status').textContent='';toast('✓ Baixa salva com sucesso!');
  if(stream){active=true;queue();}
 };
@@ -119,10 +148,26 @@ $('open').onclick=async()=>{
  }
 };
 $('close').onclick=()=>{stop();$('status').textContent='Câmera fechada.'};$('again').onclick=()=>{if(stream){active=true;$('choices').innerHTML='';queue();}};
-async function getWorker(){if(worker)return worker;if(!window.Tesseract)await new Promise((resolve,reject)=>{let s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=resolve;s.onerror=()=>reject(Error('Falha ao carregar OCR'));document.head.append(s);});worker=await Tesseract.createWorker('eng');return worker;}
+let workerPromise=null;
+async function getWorker(){
+ if(worker)return worker;
+ if(workerPromise)return workerPromise;
+ workerPromise=(async()=>{
+  if(!window.Tesseract)await new Promise((resolve,reject)=>{let s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';s.onload=resolve;s.onerror=()=>reject(Error('Falha ao carregar OCR'));document.head.append(s);});
+  worker=await Tesseract.createWorker('eng');return worker;
+ })();
+ try{return await workerPromise;}catch(e){workerPromise=null;throw e;}
+}
+function prepareOcr(){
+ const el=$('ocrReady');el.textContent='Preparando OCR em segundo plano…';
+ getWorker().then(()=>{el.textContent='✓ OCR pronto para leitura.';}).catch(e=>{el.textContent='OCR não carregado: '+e.message+'. A digitação manual continua disponível.';});
+}
+// Inicia a preparação antes do usuário tocar em Abrir Câmera.
+setTimeout(prepareOcr,200);
+
 function crop(){let vr=video.getBoundingClientRect(),rr=roi.getBoundingClientRect(),vw=video.videoWidth,vh=video.videoHeight;if(!vw||!vh)throw Error('Câmera iniciando');let scale=Math.max(vr.width/vw,vr.height/vh),ow=(vw-vr.width/scale)/2,oh=(vh-vr.height/scale)/2,x=Math.max(0,ow+(rr.left-vr.left)/scale),y=Math.max(0,oh+(rr.top-vr.top)/scale),w=Math.min(rr.width/scale,vw-x),h=Math.min(rr.height/scale,vh-y);let c=$('snap'),k=Math.min(2,1000/Math.max(w,h));c.width=Math.max(1,Math.round(w*k));c.height=Math.max(1,Math.round(h*k));c.getContext('2d').drawImage(video,x,y,w,h,0,0,c.width,c.height);return c;}
 function queue(){if(!active||busy||!stream)return;clearTimeout(timer);timer=setTimeout(scan,250);}
-async function scan(){if(!active||busy||!stream)return;busy=true;let token=epoch;try{$('status').textContent='Lendo região selecionada...';let c=crop(),w=await getWorker();if(token!==epoch)return;let result=await w.recognize(c);if(token!==epoch)return;let opts=[...new Set(result.data.text.split(/\r?\n/).map(x=>x.trim().toUpperCase()).filter(x=>x.length>2))].slice(0,8);if(opts.length){active=false;let last=opts[opts.length-1];$('tag').value=last;$('status').textContent='Último resultado encontrado: '+last+'. Confira a TAG antes de salvar.';$('choices').innerHTML='';}else $('status').textContent='Ajuste a moldura sobre a TAG.';}catch(e){if(token===epoch)$('status').textContent='OCR indisponível: '+e.message+'. Digite a TAG manualmente.';}finally{busy=false;if(active&&token===epoch)timer=setTimeout(scan,1100);}}
+async function scan(){if(!active||busy||!stream)return;busy=true;let token=epoch;try{$('status').textContent='Lendo região selecionada...';let c=crop(),w=await getWorker();if(token!==epoch)return;let result=await w.recognize(c);if(token!==epoch)return;let opts=[...new Set(result.data.text.split(/\r?\n/).map(x=>x.trim().toUpperCase()).filter(x=>x.length>2))].slice(0,8);if(opts.length){active=false;let last=opts[opts.length-1];acceptTag(last);}else $('status').textContent='Ajuste a moldura sobre a TAG.';}catch(e){if(token===epoch)$('status').textContent='OCR indisponível: '+e.message+'. Digite a TAG manualmente.';active=false;}finally{busy=false;if(active&&token===epoch)timer=setTimeout(scan,1100);}}
 
 $('readPhoto').onclick=async()=>{
  const file=$('photoFallback').files?.[0];
@@ -133,7 +178,7 @@ $('readPhoto').onclick=async()=>{
   const result=await w.recognize(file);
   const lines=result.data.text.split(/\r?\n/).map(x=>x.trim().toUpperCase()).filter(x=>x.length>2);
   const last=lines.at(-1);
-  if(last){$('tag').value=last;$('status').textContent='Último resultado: '+last+'. Confira antes de salvar.';}
+  if(last){acceptTag(last);}
   else $('status').textContent='Nenhum texto encontrado. Digite a TAG.';
  }catch(e){$('status').textContent='Erro no OCR: '+e.message;}
 };
